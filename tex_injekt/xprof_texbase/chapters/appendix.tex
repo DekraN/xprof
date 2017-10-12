@@ -1,0 +1,945 @@
+% !TEX encoding = UTF-8
+% !TEX TS-program = pdflatex
+% !TEX root = ../InsSchonauerTriadBenchmark.tex
+% !TEX spellcheck = it-IT
+
+%************************************************
+\chapter{Appendice}
+\label{cap:appendix}
+%************************************************\\
+
+\section{Codice utilizzato}
+
+\subsection{Profiling}
+
+\subsubsection{Kernel in analisi}
+
+\begin{lstlisting}[language=C,breaklines=true]
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <sys/time.h>
+
+#if(defined(PERFCOUNT) || defined(PERFCOUNT2))
+	#include <papi.h>
+	#include <papiStdEventDefs.h>
+	#define PERFCOUNTX
+#endif
+
+// #define VERBOSE
+#define DEFAULT_NMAX 100000
+#define DEFAULT_NR DEFAULT_NMAX
+#define DEFAULT_INC 10
+#define DEFAULT_XIDX 0
+
+#define MAX_PATH_LENGTH 1024
+
+#define ERROR_DESC stderr
+
+// #define WINOS
+#define STACKALLOC
+
+#ifdef WINOS 
+	#include <windows.h>
+#endif
+
+static void dummy(double A[], double B[], double C[], double D[])
+{
+	return;
+}
+
+static double simulation(int N, int R)
+{
+	int i, j;
+	
+	#ifdef STACKALLOC
+		double A[N];
+		double B[N];
+		double C[N];
+		double D[N];
+	#else
+		double * A = malloc(N*sizeof(double));
+		double * B = malloc(N*sizeof(double));
+		double * C = malloc(N*sizeof(double));
+		double * D = malloc(N*sizeof(double));
+	#endif
+	
+	double elaps;
+	
+	for (i = 0; i < N; ++i)
+	{
+	    A[i] = 0.00;
+	    B[i] = 1.00;
+	    C[i] = 2.00;
+	    D[i] = 3.00;
+  	}
+	
+	#ifdef WINOS
+		FILETIME tp;
+		GetSystemTimePreciseAsFileTime(&tp);
+		elaps = - (double)(((ULONGLONG)tp.dwHighDateTime << 32) | (ULONGLONG)tp.dwLowDateTime)/10000000.0;
+	#else
+		struct timeval tp;
+		gettimeofday(&tp, NULL);
+		elaps = -(double)(tp.tv_sec + tp.tv_usec/1000000.0);
+	#endif
+	
+	for(j=0; j<R; ++j)
+	{
+		for(i=0; i<N; ++i)
+			A[i] = B[i] + C[i]*D[i];
+			
+		if(A[2] < 0) dummy(A, B, C, D);
+	}
+	
+	#ifndef STACKALLOC
+		free(A);
+		free(B); 
+		free(C);
+		free(D);
+	#endif
+	
+	#ifdef WINOS
+		GetSystemTimePreciseAsFileTime(&tp);
+		return elaps + (double)(((ULONGLONG)tp.dwHighDateTime << 32) | (ULONGLONG)tp.dwLowDateTime)/10000000.0;
+	#else
+		gettimeofday(&tp, NULL);
+		return elaps + ((double)(tp.tv_sec + tp.tv_usec/1000000.0));
+	#endif
+}
+
+enum
+{
+	NOERROR_EXIT = 0
+	#ifdef PERFCOUNTX
+	, ERROR_PAPIADDEVENTTOTCYC,
+	ERROR_PAPIADDEVENTTOTINS,
+	ERROR_PAPIADDEVENTL2TCM,
+	ERROR_PAPIADDEVENTL3TCM,
+	ERROR_PAPIADDEVENTLDINS,
+	ERROR_PAPIADDEVENTSRINS,
+	ERROR_PAPIADDEVENTFPOPS,
+	ERROR_PAPIADDEVENTFPINS,
+	MAX_PAPICOUNTERS = ERROR_PAPIADDEVENTFPINS,
+	ERROR_PAPICREATEEVSET,
+	ERROR_PAPISTART,
+	ERROR_PAPISTOP,
+	ERROR_PAPIVER
+	#endif
+};
+
+#ifdef PERFCOUNTX
+
+#ifdef PERFCOUNT
+enum
+{
+	PAPI_TOTCYC,
+	PAPI_TOTINS,
+	PAPI_L2TCM,
+	PAPI_L3TCM,
+	PAPI_LDINS,
+	PAPI_SRINS,
+	PAPI_FPOPS,
+	PAPI_FPINS,
+	MAX_PERFCOUNT
+};
+#else
+#ifdef PERFCOUNT2
+enum
+{
+	PAPI_UOPSEXECUTEDSTALLCYCLES,
+	PAPI_LLCPREFETCHMISSESPREFETCH,
+	PAPI_FPCOMPOPSEXEX87,
+	PAPI_FPCOMPOPSEXESSESCALARDOUBLE,
+	PAPI_ARITHFPUDIVACTIVE,
+	PAPI_ARITHFPUDIV,
+	MAX_PERFCOUNT
+};
+#endif 
+#endif
+	
+
+static inline void handle_error(int retval)
+{
+	fprintf(ERROR_DESC, "%s\n", PAPI_strerror(retval));
+	return;
+}
+#endif
+
+int main(int argc, char *argv[])
+{
+	const int NR = argc > 1 ? atoi(argv[1]) : DEFAULT_NR;
+	const int NMAX = argc > 2 ? atoi(argv[2]) : DEFAULT_NMAX;
+	const int inc = argc > 3 ? atoi(argv[3]) : DEFAULT_INC;
+	
+	#ifdef VERBOSE
+		const int xidx = argc > 4 ? atoi(argv[4]) : DEFAULT_XIDX;
+	#endif
+	
+	int i, j, k;
+	
+	#ifdef VERBOSE
+		FILE * fp;
+		printf("\n*** Schonauer Triad benchmark ***\n");
+	
+		char csvname[MAX_PATH_LENGTH];
+	  	sprintf(csvname, "data%d.csv", xidx);
+	
+		if(!(fp = fopen(csvname, "a+")))
+		{
+			printf("\nError whilst writing to file\n");
+			return 1;
+		}
+	#endif
+	
+	int R, N;
+	double MFLOPS;
+	double elaps;
+	
+	#ifdef PERFCOUNTX
+		double cpu_time = 0.00;
+
+		printf("\nInitializing PAPI Library..\n");
+		printf("PAPI_VER_CURRENT value: %d\n", PAPI_VER_CURRENT);
+		int EventSet = PAPI_NULL;
+		int retval = PAPI_library_init(PAPI_VER_CURRENT);
+		if(retval != PAPI_VER_CURRENT && retval > 0)
+		{
+			fprintf(ERROR_DESC,"PAPI library version mismatch!\en");
+			handle_error(retval);			
+			return ERROR_PAPIVER;
+		}
+
+		if (retval < 0)
+		{
+			fprintf(ERROR_DESC, "Some library error occurred: ");
+			handle_error(retval);
+			return ERROR_PAPIVER;
+		}
+		retval = PAPI_is_initialized();
+		if ((retval = PAPI_is_initialized()) != PAPI_LOW_LEVEL_INITED)
+		{
+			fprintf(ERROR_DESC, "Some library low-level initialization error occurred: ");
+			handle_error(retval);
+			return ERROR_PAPIVER;
+		}		
+
+		if((retval = PAPI_create_eventset(&EventSet)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_create_eventset(): ");
+			handle_error(retval);	
+			return ERROR_PAPICREATEEVSET;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_TOT_CYC)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_TOT_CYC): ");	
+			handle_error(retval);				
+			return ERROR_PAPIADDEVENTTOTCYC;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_TOT_INS)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_TOT_INS): ");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTTOTINS;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_L2_TCM)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_L2_TCM): ");
+			handle_error(retval);		
+			return ERROR_PAPIADDEVENTL2TCM;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_L3_TCM)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_L3_TCM): ");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTL3TCM;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_LD_INS)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_LD_INS): ");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTLDINS;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_SR_INS)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_SR_INS)");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTSRINS;
+		}
+		if((retval = PAPI_add_event(EventSet, PAPI_FP_OPS)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_FP_OPS): ");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTFPOPS;
+		}	
+		if((retval = PAPI_add_event(EventSet, PAPI_FP_INS)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_FP_INS): ");
+			handle_error(retval);	
+			return ERROR_PAPIADDEVENTFPINS;	
+		}
+	
+		if((retval = PAPI_start(EventSet)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_start(): ");
+			handle_error(retval);	
+			return ERROR_PAPISTART;
+		}
+	
+		// count_init();
+		// count_start();
+	#endif
+	
+	for(N=1; N<=NMAX; N += inc)
+	{
+		R = NR/N;
+		elaps = simulation(N, R);
+		#ifdef PERFCOUNTX
+			cpu_time += elaps;
+		#endif
+		#ifdef VERBOSE		
+			MFLOPS = ((R*N)<<1)/(elaps*1000000);
+			fprintf(fp, "%d,%lf\n", N, MFLOPS);
+			printf("N = %d, R = %d\n", N, R);
+			printf("Elapsed time: %lf\n", elaps);
+			printf("MFLOPS: %lf\n", MFLOPS);
+		#endif
+	}
+
+	#ifdef PERFCOUNTX
+		// count_stop();
+		// count_finalize();
+	
+		long_long ret_values[MAX_PERFCOUNT];
+		
+		if((retval = PAPI_stop(EventSet, ret_values)) != PAPI_OK)
+		{
+			fprintf(ERROR_DESC, "error on PAPI_stop(): ");
+			handle_error(retval);	
+			return ERROR_PAPISTOP;
+		}
+
+
+		printf("*** Start PAPI counters listings ***\n");
+		#ifdef PERFCOUNT
+			printf("PAPI_STOP_OUTPUT: PAPI_TOT_CYC: %lld\n", ret_values[PAPI_TOTCYC]);
+			printf("PAPI_STOP_OUTPUT: PAPI_TOT_INS: %lld\n", ret_values[PAPI_TOTINS]);
+			printf("PAPI_STOP_OUTPUT: PAPI_L2_TCM: %lld\n", ret_values[PAPI_L2TCM]);
+			printf("PAPI_STOP_OUTPUT: PAPI_L3_TCM: %lld\n", ret_values[PAPI_L3TCM]);
+			printf("PAPI_STOP_OUTPUT: PAPI_LD_INS: %lld\n", ret_values[PAPI_LDINS]);
+			printf("PAPI_STOP_OUTPUT: PAPI_SR_INS: %lld\n", ret_values[PAPI_SRINS]);
+			printf("PAPI_STOP_OUTPUT: PAPI_FP_OPS: %lld\n", ret_values[PAPI_FPOPS]);
+			printf("PAPI_STOP_OUTPUT: PAPI_FP_INS: %lld\n", ret_values[PAPI_FPINS]);
+		#else
+		#ifdef PERFCOUNT2
+			printf("PAPI_STOP_OUTPUT: UOPS_EXECUTED:STALL-CYCLES: %lld\n", ret_values[PAPI_UOPSEXECUTEDSTALLCYCLES]);
+			printf("PAPI_STOP_OUTPUT: LLC-PREFETCH-MISSES: %lld\n", ret_values[PAPI_LLCPREFETCHMISSESPREFETCH]);
+			printf("PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:X87: %lld\n", ret_values[PAPI_FPCOMPOPSEXEX87]);
+			printf("PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:SSE_SCALAR_DOUBLE: %lld\n", ret_values[PAPI_FPCOMPOPSEXESSESCALARDOUBLE]);		
+			printf("PAPI_STOP_OUTPUT: ARITH:FPU_DIV_ACTIVE: %lld\n", ret_values[PAPI_ARITHFPUDIVACTIVE]);
+			printf("PAPI_STOP_OUTPUT: ARITH:FPU_DIV: %lld\n", ret_values[PAPI_ARITHFPUDIV]);
+		#endif
+		#endif
+		
+		printf("\nExecution time: %lf\n\n", cpu_time);
+	#endif
+	
+	#ifdef VERBOSE
+		fclose(fp);
+		(void) getchar();
+	#endif
+	return 0;
+}
+
+\end{lstlisting}
+
+\subsection{Codice Roofline Model Plotter}
+
+\begin{lstlisting}[language=python,breaklines=true]
+#######################################
+####### Roofline Model Plotter ########
+##### Marco Chiarelli @ UNISALENTO#####
+## marco_chiarelli@yahoo.it 23/05/2017#
+#######################################
+#######################################
+
+import numpy as np
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+
+from sys import argv
+
+argc = len(argv)
+optimized = argc >= 11
+
+# Verbose Settings
+# useful for debugging
+verbose_machine = argc > 12 and bool(argv[12]) or True
+verbose_kernel = argc > 13 and bool(argv[13]) or True
+autosave = argc > 14 and bool(argv[14]) or True
+
+if argc < 9:
+    print("Error: Invalid number of arguments.")
+    exit(0)
+    
+# Kernel Info
+your_kernel_name = str(argv[1])
+your_machine_name = str(argv[5])
+Flops = int(argv[2])
+Gflops = Flops/(10**9)
+L3CM = int(argv[3])
+etime = float(argv[4])
+GFLOPS = Gflops/etime # y coordinate
+
+global Flops_opt
+global Gflops_opt
+global L3CM_opt
+global etime_opt
+global GFLOPS_opt
+global traffic_opt
+global arithmetic_int_opt
+
+# Machine Info
+L3LineSize = int(argv[6]) # LL cache line size
+bmax = float(argv[7]) # maximum bandwidth;
+peak_fp_performance = float(argv[8]) # GFLOPS/s
+ridge_point = peak_fp_performance/bmax
+sample_y = round(2*bmax, 2)
+
+if optimized:
+    Flops_opt = int(argv[9])
+    Gflops_opt = Flops_opt/(10**9)
+    L3CM_opt = int(argv[10])
+    etime_opt = float(argv[11])
+    GFLOPS_opt = Gflops_opt/etime_opt
+    traffic_opt = (L3CM_opt*L3LineSize)/(1024**3)
+    arithmetic_int_opt = Gflops_opt/traffic_opt # x coordinate
+
+# Some other stuffs
+traffic = (L3CM*L3LineSize)/(1024**3)
+arithmetic_int = Gflops/traffic
+
+def printline():
+    print("--------------------------------------------------")
+
+def printKernel(your_kernel_name, Flops, L3CM, etime, Gflops, GFLOPS, traffic, arithmetic_int):
+    printline()
+    print(your_kernel_name + " - Roofline Model (RLM)")
+    printline()
+    print("Floating Point Operations (Flops) = " + str(Flops) + ";")
+    print("L3 Cache Misses = " + str(L3CM) + ";")
+    print("Execution time = " + str(etime) + ";")
+    print("Gflops = " + str(Gflops) + ";")
+    print("GFLOPS = " + str(GFLOPS) + ";")
+    print("Traffic = " + str(traffic) + " GB;")
+    print("Arithmetic Intensity (AI) = " + str(arithmetic_int) + " Gflops/GB.")
+    printline()
+    print("Your kernel: " + your_kernel_name+";")
+    print("is: " + (arithmetic_int > ridge_point and "COMPUTE" or "MEMORY") + " BOUNDED!")
+    print("with respect to the machine: ")
+    print(your_machine_name+".")
+    printline()
+    print(" ")
+    print(" ")
+
+printline()
+print("####### Roofline Model Plotter ########")
+print("#######################################")
+print("##### Marco Chiarelli @ UNISALENTO#####")
+print("## marco_chiarelli@yahoo.it 23/05/2017#")
+print("#######################################")
+printline()
+
+
+if verbose_machine == True:
+    printline()
+    print(your_machine_name)
+    print("Listing some machine informations...")
+    printline()
+    print("L3LineSize = " + str(L3LineSize) + " byte;")
+    print("Peak Memory BW = " + str(bmax) + " GB/s;")
+    print("Peak FP Performance = " + str(peak_fp_performance) + " Gflops/s;")
+    print("Corresponding Ridge point = " + str(ridge_point) + ".")
+    printline()
+    print(" ")
+    print(" ")
+
+if verbose_kernel == True:
+    printKernel(your_kernel_name, Flops, L3CM, etime, Gflops, GFLOPS, traffic, arithmetic_int) 
+
+    if optimized == True:
+        printKernel("Optimized "+your_kernel_name, Flops_opt, L3CM_opt, etime_opt, Gflops_opt, GFLOPS_opt, traffic_opt, arithmetic_int_opt) 
+
+if optimized == True:
+    gain_performance = ((GFLOPS_opt-GFLOPS)/GFLOPS)*100;
+    gain_memory = ((arithmetic_int_opt-arithmetic_int)/arithmetic_int)*100;
+    print("Percentual Performance Gain: " + str(gain_performance)+ ";")
+    print("Percentual Memory Gain: " + str(gain_memory) + ";")
+    print("Done a " + (gain_performance > 0 and "good" or "bad") + " job wrt FP performance;")
+    print("Done a " + (gain_memory > 0 and "good" or "bad") + " job wrt memory.")
+    print(" ")
+    print(" ")
+
+# Preparing a straight line fitting
+xP = [ridge_point, 2]
+yP = [peak_fp_performance, sample_y]
+
+coefficients = np.polyfit(xP, yP, 1)
+polynomial = np.poly1d(coefficients)
+x_axis = np.linspace(0,20,100)
+peak_memory_BW_plt = polynomial(x_axis)
+peak_fp_performance_plt = np.ones(len(x_axis))*peak_fp_performance
+
+# PLOT SETTINGS
+logbase = 2
+fig, ax = plt.subplots()
+# Machine RLM plot
+ax.loglog(np.where(x_axis >= ridge_point, 0, x_axis),np.where(peak_memory_BW_plt >= peak_fp_performance, 0, peak_memory_BW_plt),'-',basex=logbase,basey=logbase,linewidth=2.5)
+ax.loglog(np.where(x_axis >= ridge_point, x_axis, 0),np.where(peak_fp_performance_plt > peak_memory_BW_plt, 0, peak_fp_performance_plt),'-',basex=logbase,basey=logbase,linewidth=2.5)
+ax.loglog(ridge_point, peak_fp_performance,'+',basex=logbase,basey=logbase,markeredgewidth=3,markersize=10)
+# Kernel(s) plot
+ax.loglog(arithmetic_int, GFLOPS,'o',basex=logbase,basey=logbase)
+if optimized == True:
+    ax.loglog(arithmetic_int_opt, GFLOPS_opt,'o',basex=logbase,basey=logbase)
+
+def ticks(y, pos):
+    return r'$2^{:.0f}$'.format(np.log2(y))
+
+#ax.xaxis.set_major_formatter(mtick.FuncFormatter(ticks))
+#ax.yaxis.set_major_formatter(mtick.FuncFormatter(ticks))
+
+# PLOT
+plt.grid(True, which="both", ls="-")
+plt.xlabel("Arithmetic Intensity AI [GFlops/GB]")
+plt.ylabel("Attainable Performance [GFLOPS = GFlops/s]")
+plt.legend(optimized == True and ["Peak Memory BW", "Peak FP Performance", "Ridge Point", "Your Kernel", "Your Optimized Kernel"] or ["Peak Memory BW", "Peak FP Performance", "Ridge Point", "Your Kernel"], loc='best')
+plt.title("Roofline Model (RLM) of: " + your_kernel_name)
+
+if autosave:
+    fig.savefig("rlm.png", dpi=96 * 10)
+else:
+    plt.show()
+
+print("Thank you for using this program.")
+print(" ")
+print(" ")
+
+\end{lstlisting}
+
+\subsection{Xprof}
+
+\subsubsection{gathering.sh}
+\begin{lstlisting}[language=bash,breaklines=true]
+#!/bin/bash
+
+#########################################
+#### XPROF - Automatic Profiling Tool####
+##### Final Built, v0.1 - 12/10/2017 ####
+########## Authors/Developer: ###########
+### Marco Chiarelli    @ UNISALENTO&CMCC#
+### Paolo Panarese     @ UNISALENTO&CMCC#
+### Emanuele C. Cesari @ UNISALENTO&CMCC#
+######  marco_chiarelli@yahoo.it   ######
+######  panarese.paolo@gmail.com   ######
+######     cce.9123@gmail.com      ######
+#########################################
+#########################################
+
+#######################################
+####### PERFORMANCE GATHERING #########
+###### Paolo Panarese @ UNISALENTO#####
+## panarese.paolo@gmail.com 23/05/2017#
+#######################################
+#######################################
+
+function checkStatus {
+	if [[ $1 -gt 0 ]]; then
+		echo "Error reached, Quit!"
+		exit $1
+	fi
+}
+
+if [[ $# -lt 1 ]]; then
+	echo "INSERT SOURCE FILE"
+	exit 1
+fi
+
+echo
+echo
+echo "#########################################"
+echo "#### XPROF - Automatic Profiling Tool####"
+echo "##### Final Built, v0.1 - 12/10/2017 ####"
+echo "########## Authors/Developer: ###########"
+echo "### Marco Chiarelli    @ UNISALENTO&CMCC#"
+echo "### Paolo Panarese     @ UNISALENTO&CMCC#"
+echo "### Emanuele C. Cesari @ UNISALENTO&CMCC#"
+echo "######  marco_chiarelli@yahoo.it   ######"
+echo "######  panarese.paolo@gmail.com   ######"
+echo "######     cce.9123@gmail.com      ######"
+echo "#########################################"
+echo "#########################################"
+
+echo
+echo
+echo "#######################################"
+echo "####### PERFORMANCE GATHERING #########"
+echo "###### Paolo Panarese @ UNISALENTO#####"
+echo "## panarese.paolo@gmail.com 23/05/2017#"
+echo "#######################################"
+echo "#######################################"
+echo
+echo
+
+NAME=$1
+FILENAME="$NAME.c"
+PAPI_DIR=$(which papi_avail | sed -e 's/\/bin\/papi_avail/\//g')
+
+if [ -f $FILENAME ]; then
+   echo "File $FILENAME exists."
+else
+   echo "File $FILENAME does not exist."
+fi
+OPT=""
+if [[ $# -gt 1 ]]; then
+	OPT=${@:2}
+fi
+echo "$FILENAME $OPT"
+
+ulimit -s unlimited
+
+echo "Compiling with gprof-oprof flags"
+### Compile
+gcc -pg -g -O0 $FILENAME -lm -o $NAME $OPT
+checkStatus $?
+
+# GPROF
+## Dependencies:
+# apt install graphviz xdot
+# pip install graphviz xdot gprof2dot
+
+echo
+echo "********* gprof *********"
+### Execute compiled file
+./$NAME
+checkStatus $?
+
+echo "Creating gprof dir"
+rm -r -f gprof
+mkdir -p gprof
+echo "Running gprof"
+gprof ./$NAME > gprof/gprof.out
+mv gmon.out gprof/gmon.out
+rm -f gmon.out
+
+# OPROF
+
+echo
+echo "********* oprof *********"
+operf ./$NAME
+checkStatus $?
+opreport
+checkStatus $?
+opannotate --source --output-dir=output_oprof `./$NAME`
+checkStatus $?
+
+echo "Creating oprof dir and correctly placing oprof.out" 
+rm -r -f oprof
+mkdir -p oprof
+cp output_oprof`pwd`/$FILENAME oprof/oprof.out
+echo "Removing some useless stuffs."
+rm -r oprofile_data
+rm -r output_oprof
+
+
+# PERFCOUNT
+
+echo
+echo "********* perfcount *********"
+echo "Creating papi dir."
+rm -r -f papi
+mkdir -p papi
+
+echo "Compiling base kernel with PAPI (advanced) flags"
+echo "gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O0 -lm -o $NAME $FILENAME -lpapi -D PERFCOUNT2"
+gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O0 -lm -o $NAME $FILENAME -lpapi -D PERFCOUNT2
+checkStatus $?
+
+echo "Compiling optimized kernel with PAPI (advanced) flags"
+echo "gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O3 -march=native -lm -o "$NAME"_opt $FILENAME -lpapi -D PERFCOUNT2"
+gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O3 -march=native -lm -o "$NAME"_opt $FILENAME -lpapi -D PERFCOUNT2
+checkStatus $?
+
+echo "Running base kernel with PAPI (advanced) flags."
+echo
+./$NAME > papi/perf.out
+checkStatus $?
+
+echo "Compiling base kernel with PAPI (basic) flags"
+echo "gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O0 -lm -o $NAME $FILENAME -lpapi -D PERFCOUNT"
+gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O0 -lm -o $NAME $FILENAME -lpapi -D PERFCOUNT
+checkStatus $?
+
+./$NAME >> papi/perf.out
+checkStatus $?
+
+echo "Running optimized kernel with PAPI (advanced) flags."
+echo
+
+./"$NAME"_opt > papi/perf_opt.out
+checkStatus $?
+
+echo "Compiling optimized kernel with PAPI (basic) flags"
+echo "gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O3 -march=native -lm -o "$NAME"_opt $FILENAME -lpapi -D PERFCOUNT"
+gcc -I$PAPI_DIR""include -L$PAPI_DIR""lib -O3 -march=native -lm -o "$NAME"_opt $FILENAME -lpapi -D PERFCOUNT
+checkStatus $?
+
+./"$NAME"_opt >> papi/perf_opt.out
+checkStatus $?
+
+HOSTNAME=`hostname`
+CACHE_LINE=`cat /proc/cpuinfo | grep cache_alignment | sed 's/^.*:\ //' | sort -u`
+B_MAX=3.82828
+PEAK_FP=20.8
+
+cd papi
+
+echo "hostname: "$HOSTNAME > machine.out
+echo "kernel_name: "$NAME >> machine.out
+echo "cache_line: "$CACHE_LINE >> machine.out
+echo "b_max: "$B_MAX >> machine.out
+echo "peak_fp: "$PEAK_FP >> machine.out
+
+cd ..
+
+echo "Successfully Ended."
+
+
+\end{lstlisting}
+
+\subsubsection{analyzer.sh}
+\begin{lstlisting}[language=bash,breaklines=true]
+#!/bin/bash
+
+#########################################
+#### XPROF - Automatic Profiling Tool####
+##### Final Built, v0.1 - 12/10/2017 ####
+########## Authors/Developer: ###########
+### Marco Chiarelli    @ UNISALENTO&CMCC#
+### Paolo Panarese     @ UNISALENTO&CMCC#
+### Emanuele C. Cesari @ UNISALENTO&CMCC#
+######  marco_chiarelli@yahoo.it   ######
+######  panarese.paolo@gmail.com   ######
+######     cce.9123@gmail.com      ######
+#########################################
+#########################################
+
+#######################################
+####### PERFORMANCEANALYZER ###########
+###### Paolo Panarese @ UNISALENTO#####
+## panarese.paolo@gmail.com 23/05/2017#
+#######################################
+#######################################
+
+function checkStatus {
+	if [[ $1 -gt 0 ]]; then
+		echo "Error reached, Quit!"
+		exit $1
+	fi
+}
+
+echo
+echo
+echo "#########################################"
+echo "#### XPROF - Automatic Profiling Tool####"
+echo "##### Final Built, v0.1 - 12/10/2017 ####"
+echo "########## Authors/Developer: ###########"
+echo "### Marco Chiarelli    @ UNISALENTO&CMCC#"
+echo "### Paolo Panarese     @ UNISALENTO&CMCC#"
+echo "### Emanuele C. Cesari @ UNISALENTO&CMCC#"
+echo "######  marco_chiarelli@yahoo.it   ######"
+echo "######  panarese.paolo@gmail.com   ######"
+echo "######     cce.9123@gmail.com      ######"
+echo "#########################################"
+echo "#########################################"
+
+echo
+echo
+echo "#######################################"
+echo "####### PERFORMANCEANALYZER ###########"
+echo "###### Paolo Panarese @ UNISALENTO#####"
+echo "## panarese.paolo@gmail.com 23/05/2017#"
+echo "#######################################"
+echo "#######################################"
+echo
+echo
+
+### GPROF
+## Dependencies:
+# apt install graphviz xdot
+# pip install graphviz xdot gprof2dot
+echo "Generating call graph through gprof2dot and xdot."
+cd gprof
+### Export to dot file
+gprof2dot gprof.out > call_graph.dot
+### Convert to png image
+dot -Tpng call_graph.dot -o call_graph.png
+cd ..
+
+### OPROF
+## Dependencies:
+# pip install matplotlib
+# apt-get install sed
+echo "Generating oprof (cumulative) histogram through oprof_graph.py"
+cd oprof
+cat --number oprof.out | sed 's/\t/\ \ \ \ /' | sed 's/^\ *\([0-9]*\)\ *\([0-9]*\)\ *\([0-9]*\)\ */\1 \2 \3/' | grep ^[0-9]*\ [0-9]*\ [0-9.]*\ *: | sed 's/:.*//' > oprof_data
+
+### print graph with python
+python ../oprof_graph.py
+checkStatus $?
+cd ..
+
+
+### PERF_RLM
+## Dependencies:
+# apt install python3-tk
+echo "Preparing and exporting vars for TeX Injekt."
+cd papi
+export GET_DEVELOPER1="Dott. Marco Chiarelli"
+export GET_DEVELOPER2="Dott. Paolo Panarese"
+export GET_DEVELOPER3="Dott. Emanuele Costa Cesari"
+export HOSTNAME=`cat machine.out | grep "hostname" | sed 's/^.*:\ //'`
+export KERNEL_NAME=`cat machine.out | grep "kernel_name" | sed 's/^.*:\ //'`
+
+export FP_OPS=`cat perf.out | grep FP_OPS | sed 's/^.*:\ //'`
+export L3_TCM=`cat perf.out | grep PAPI_L3_TCM | sed 's/^.*:\ //'`
+export L2_TCM=`cat perf.out | grep PAPI_L2_TCM | sed 's/^.*:\ //'`
+export TOT_CYC=`cat perf.out | grep PAPI_TOT_CYC | sed 's/^.*:\ //'`
+export TOT_INS=`cat perf.out | grep PAPI_TOT_INS | sed 's/^.*:\ //'`
+export LLC_PM=`cat perf.out | grep LLC-PREFETCH-MISSES | sed 's/^.*:\ //'`
+export LD_INS=`cat perf.out | grep PAPI_LD_INS | sed 's/^.*:\ //'`
+export SR_INS=`cat perf.out | grep PAPI_SR_INS | sed 's/^.*:\ //'`
+export SC=`cat perf.out | grep UOPS_EXECUTED | sed 's/^.*:\ //'`
+export EXEC_TIME=`cat perf.out | grep Execution\ time | sed 's/^.*:\ //' | awk '{ sum += $1; n++ } END { if (n > 0) print sum / n; }'`
+
+export FP_OPS_OPT=`cat perf_opt.out | grep FP_OPS | sed 's/^.*:\ //'`
+if [[ $FP_OPS_OPT -le $FP_OPS ]]; then	
+	FP_OPS_OPT=$FP_OPS
+fi
+export L3_TCM_OPT=`cat perf_opt.out | grep PAPI_L3_TCM | sed 's/^.*:\ //'`
+export L2_TCM_OPT=`cat perf_opt.out | grep PAPI_L2_TCM | sed 's/^.*:\ //'`
+export TOT_CYC_OPT=`cat perf_opt.out | grep PAPI_TOT_CYC | sed 's/^.*:\ //'`
+export TOT_INS_OPT=`cat perf_opt.out | grep PAPI_TOT_INS | sed 's/^.*:\ //'`
+export LLC_PM_OPT=`cat perf_opt.out | grep LLC-PREFETCH-MISSES | sed 's/^.*:\ //'`
+export LD_INS_OPT=`cat perf_opt.out | grep PAPI_LD_INS | sed 's/^.*:\ //'`
+export SR_INS_OPT=`cat perf_opt.out | grep PAPI_SR_INS | sed 's/^.*:\ //'`
+export SC_OPT=`cat perf_opt.out | grep UOPS_EXECUTED | sed 's/^.*:\ //'`
+export EXEC_TIME_OPT=`cat perf_opt.out | grep Execution\ time | sed 's/^.*:\ //' | awk '{ sum += $1; n++ } END { if (n > 0) print sum / n; }'`
+
+export CACHE_LINE=`cat machine.out | grep cache_line | sed 's/^.*:\ //'`
+export B_MAX=`cat machine.out | grep b_max | sed 's/^.*:\ //'`
+export PEAK_FP=`cat machine.out | grep peak_fp | sed 's/^.*:\ //'`
+
+echo "Generating Roofline Model Plot through Python RLMP".
+python3 ../rlmp.py $KERNEL_NAME $FP_OPS $L3_TCM $EXEC_TIME $HOSTNAME $CACHE_LINE $B_MAX $PEAK_FP $FP_OPS_OPT $L3_TCM_OPT $EXEC_TIME_OPT > rlm.out
+
+checkStatus $?
+
+cd ../tex_injekt
+
+echo "Running TeX Injekt."
+./tex_injekt.sh
+
+cd ..
+
+echo "Successfully ended."
+echo
+echo "Thanks you for using this program."
+echo
+echo
+
+\end{lstlisting}
+
+\subsubsection{OProf Graph}
+\begin{lstlisting}[language=python,breaklines=true]
+import numpy as np
+import matplotlib.pyplot as plt
+
+graphXDelay = 3
+
+x = []
+y = []
+xLabel = []
+
+file = open("oprof_data", "r") 
+lines = file.readlines()
+
+for line in lines:
+	splitted = str(line).split(' ')
+	x.append(int(splitted[0]))
+	if len(x) % graphXDelay == 0:
+		xLabel.append(splitted[0])
+	else:
+		xLabel.append("")
+	if len(splitted) > 3:
+		y.append(float(splitted[1]))
+	else:
+		y.append(0)
+
+ind = np.arange(len(y))
+
+width = 0.35       # the width of the bars
+
+fig, ax = plt.subplots()
+
+rects = ax.bar(ind, y, width, color='b')
+
+lineY = np.cumsum(y)
+lineGraph = ax.plot(ind, lineY, 'r')
+
+ax.set_title('oprof')
+ax.set_xticks(ind + width / 2)
+ax.set_xticklabels(xLabel)
+
+ax.legend((rects[0], lineGraph[0]), ("Samples", "Cumulative Sum"))
+
+#plt.show()
+#fig.savefig('oprof.png')
+fig.savefig('oprof.png', dpi=96 * 10)
+
+
+
+
+\end{lstlisting}
+
+\section{Strumenti utilizzati}
+
+Si ringraziano i rispettivi autori dei seguenti strumenti, soprattutto quelli open-source. 
+
+\begin{itemize}
+\item\emph{Dev-C++ 5.7.1};
+\item\emph{Windows 10 Pro 64-Bit};
+\item\emph{CentOS release 6.5 (Final)};
+\item\emph{Cluster Manager v7.0};
+\item\emph{CentOS Linux 7 (Core) (7.3.1611, Core)};
+\item\emph{CentOS Linux 7 (Core) (7.2.1511, Core)};
+\item\emph{Ubuntu Linux 17.04 Zesty Zapus};
+\item\emph{OpenVPN GUI v11.6.0.0};
+\item\emph{PuTTY Release 0.68};
+\item\emph{GCC (tdm64-2) 4.8.1: TDM-GCC (MinGW, Windows, Lenovo Z500)};
+\item\emph{gcc (GCC) 4.8.2: Linux (Macchina E4)};
+\item\emph{gcc (GCC) 4.8.5 20150623 (Red Hat 4.8.5-11) (iDataPlex dx360M4, nodo Athena)};
+\item\emph{gcc (GCC) 4.8.5 20150623 (Red Hat 4.8.5-11) (HP DL560 gen8, server HP)};
+\item\emph{gcc (Ubuntu 6.3.0-12ubuntu2) 6.3.0 20170406 (Asus N550 e Lenovo Z500)};
+\item\emph{Texmaker 4.5};
+\item\emph{benchmark\_visualizer.py};
+\item\emph{GNU gprof version 2.25.1-22.base.e17};
+\item\emph{operf: oprofile 1.1.0};
+\item\emph{Libreria PAPI};
+\item\emph{Microsoft Excel 2007 (12.0.6759.5000) SP3 MSO (12.0.6759.5000)};
+\item\emph{LibreOffice Calc 5.3.1.2};
+\item\emph{Python 3.4.3};
+\item\emph{Python IDLE 3.4.3};
+\item\emph{Roofline Model Plotter (rlmp.py)};
+\item\emph{xprof 0.1a};
+\end{itemize}
