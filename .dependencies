@@ -1,0 +1,30 @@
+#!/bin/bash
+
+#########################################
+#### XPROF - Automatic Profiling Tool####
+##### Final Built, v0.1 - 12/10/2017 ####
+########## Authors/Developer: ###########
+### Marco Chiarelli    @ UNISALENTO&CMCC#
+### Paolo Panarese     @ UNISALENTO&CMCC#
+### Emanuele C. Cesari @ UNISALENTO&CMCC#
+######  marco_chiarelli@yahoo.it   ######
+######  panarese.paolo@gmail.com   ######
+######     cce.9123@gmail.com      ######
+#########################################
+#########################################
+
+# GPROF
+## Dependencies:
+# apt install graphviz xdot
+# pip install graphviz xdot
+# sudo pip install gprof2dot
+
+# OPROF
+# apt install oprofile
+# pip install matplotlib
+
+# PAPI / PERF
+# http://icl.cs.utk.edu/papi/software/index.html
+# apt install sed
+# apt install python3-tk
+
