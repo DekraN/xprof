@@ -1,0 +1,849 @@
+% !TEX encoding = UTF-8
+% !TEX TS-program = pdflatex
+% !TEX root = ../InsSchonauerTriadBenchmark.tex
+% !TEX spellcheck = it-IT
+
+%************************************************
+\chapter{InsSchonauerTriadBenchmark Profiling}
+\label{cap:profiling}
+%************************************************\\
+
+\section{Function Profiling}
+
+Si è utilizzato \emph{gprof} per effettuare il function profiling, per utilizzare il quale si utilizza la tecnologia di \textit{Code instrumentation}. I risultati sono i seguenti:
+
+\subsection{Call Graph}
+
+\begin{lstlisting}[breaklines=true]
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  us/call  us/call  name    
+100.55      6.58     6.58    10000   657.57   657.57  simulation
+
+ %         the percentage of the total running time of the
+time       program used by this function.
+
+cumulative a running sum of the number of seconds accounted
+ seconds   for by this function and those listed above it.
+
+ self      the number of seconds accounted for by this
+seconds    function alone.  This is the major sort for this
+           listing.
+
+calls      the number of times this function was invoked, if
+           this function is profiled, else blank.
+ 
+ self      the average number of milliseconds spent in this
+ms/call    function per call, if this function is profiled,
+	   else blank.
+
+ total     the average number of milliseconds spent in this
+ms/call    function and its descendents per call, if this 
+	   function is profiled, else blank.
+
+name       the name of the function.  This is the minor sort
+           for this listing. The index shows the location of
+	   the function in the gprof listing. If the index is
+	   in parenthesis it shows where it would appear in
+	   the gprof listing if it were to be printed.
+
+		     Call graph (explanation follows)
+
+
+granularity: each sample hit covers 2 byte(s) for 0.15% of 6.58 seconds
+
+index % time    self  children    called     name
+                6.58    0.00   10000/10000       main [2]
+[1]    100.0    6.58    0.00   10000         simulation [1]
+-----------------------------------------------
+                                                 <spontaneous>
+[2]    100.0    0.00    6.58                 main [2]
+                6.58    0.00   10000/10000       simulation [1]
+-----------------------------------------------
+
+ This table describes the call tree of the program, and was sorted by
+ the total amount of time spent in each function and its children.
+
+ Each entry in this table consists of several lines.  The line with the
+ index number at the left hand margin lists the current function.
+ The lines above it list the functions that called this function,
+ and the lines below it list the functions this one called.
+ This line lists:
+     index	A unique number given to each element of the table.
+		Index numbers are sorted numerically.
+		The index number is printed next to every function name so
+		it is easier to look up where the function in the table.
+
+     % time	This is the percentage of the `total' time that was spent
+		in this function and its children.  Note that due to
+		different viewpoints, functions excluded by options, etc,
+		these numbers will NOT add up to 100%.
+
+     self	This is the total amount of time spent in this function.
+
+     children	This is the total amount of time propagated into this
+		function by its children.
+
+     called	This is the number of times the function was called.
+		If the function called itself recursively, the number
+		only includes non-recursive calls, and is followed by
+		a `+' and the number of recursive calls.
+
+     name	The name of the current function.  The index number is
+		printed after it.  If the function is a member of a
+		cycle, the cycle number is printed between the
+		function's name and the index number.
+
+
+ For the function's parents, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the function into this parent.
+
+     children	This is the amount of time that was propagated from
+		the function's children into this parent.
+
+     called	This is the number of times this parent called the
+		function `/' the total number of times the function
+		was called.  Recursive calls to the function are not
+		included in the number after the `/'.
+
+     name	This is the name of the parent.  The parent's index
+		number is printed after it.  If the parent is a
+		member of a cycle, the cycle number is printed between
+		the name and the index number.
+
+ If the parents of the function cannot be determined, the word
+ `<spontaneous>' is printed in the `name' field, and all the other
+ fields are blank.
+
+ For the function's children, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the child into the function.
+
+     children	This is the amount of time that was propagated from the
+		child's children to the function.
+
+     called	This is the number of times the function called
+		this child `/' the total number of times the child
+		was called.  Recursive calls by the child are not
+		listed in the number after the `/'.
+
+     name	This is the name of the child.  The child's index
+		number is printed after it.  If the child is a
+		member of a cycle, the cycle number is printed
+		between the name and the index number.
+
+ If there are any cycles (circles) in the call graph, there is an
+ entry for the cycle-as-a-whole.  This entry shows who called the
+ cycle (as parents) and the members of the cycle (as children.)
+ The `+' recursive calls entry shows the number of function calls that
+ were internal to the cycle, and the calls entry for each member shows,
+ for that member, how many times it was called from other members of
+ the cycle.
+
+
+Index by function name
+
+   [1] simulation (InsSchonauerTriadBenchmark.c)
+
+\end{lstlisting}
+
+\subsection{Rappresentazione grafica Call Graph}
+
+La rappresentazione grafica, mediante \textit{call graph} è la seguente:
+
+\begin{center}
+\begin{figure}[H]
+\centering
+\includegraphics[scale=1]{figures/call_graph.png}
+\caption{InsSchonauerTriadBenchmark CALL GRAPH}
+\end{figure}
+\end{center}
+
+\section{Line-based Profiling}
+
+\begin{lstlisting}[language=C,breaklines=true]
+               :#include <stdio.h>
+               :#include <stdlib.h>
+               :
+               :#include <sys/time.h>
+               :
+               :#if(defined(PERFCOUNT) || defined(PERFCOUNT2))
+               :	#include <papi.h>
+               :	#include <papiStdEventDefs.h>
+               :	#define PERFCOUNTX
+               :#endif
+               :
+               :// #define VERBOSE
+               :#define DEFAULT_NMAX 100000
+               :#define DEFAULT_NR DEFAULT_NMAX
+               :#define DEFAULT_INC 10
+               :#define DEFAULT_XIDX 0
+               :
+               :#define MAX_PATH_LENGTH 1024
+               :
+               :#define ERROR_DESC stderr
+               :
+               :// #define WINOS
+               :#define STACKALLOC
+               :
+               :#ifdef WINOS 
+               :	#include <windows.h>
+               :#endif
+               :
+               :static void dummy(double A[], double B[], double C[], double D[])
+               :{
+               :	return;
+               :}
+               :
+               :static double simulation(int N, int R)
+     2  0.0012 :{ /* simulation total: 170841 99.6715 */
+               :	int i, j;
+               :	
+               :	#ifdef STACKALLOC
+               :		double A[N];
+               :		double B[N];
+     2  0.0012 :		double C[N];
+     1 5.8e-04 :		double D[N];
+               :	#else
+               :		double * A = malloc(N*sizeof(double));
+               :		double * B = malloc(N*sizeof(double));
+               :		double * C = malloc(N*sizeof(double));
+               :		double * D = malloc(N*sizeof(double));
+               :	#endif
+               :	
+               :	double elaps;
+               :	
+ 16514  9.6345 :	for (i = 0; i < N; ++i)
+               :	{
+ 12922  7.5389 :	    A[i] = 0.00;
+ 24411 14.2418 :	    B[i] = 1.00;
+ 16444  9.5937 :	    C[i] = 2.00;
+ 15823  9.2314 :	    D[i] = 3.00;
+               :  	}
+               :	
+               :	#ifdef WINOS
+               :		FILETIME tp;
+               :		GetSystemTimePreciseAsFileTime(&tp);
+               :		elaps = - (double)(((ULONGLONG)tp.dwHighDateTime << 32) | (ULONGLONG)tp.dwLowDateTime)/10000000.0;
+               :	#else
+               :		struct timeval tp;
+     2  0.0012 :		gettimeofday(&tp, NULL);
+     9  0.0053 :		elaps = -(double)(tp.tv_sec + tp.tv_usec/1000000.0);
+               :	#endif
+               :	
+     3  0.0018 :	for(j=0; j<R; ++j)
+               :	{
+ 17030  9.9356 :		for(i=0; i<N; ++i)
+ 67644 39.4647 :			A[i] = B[i] + C[i]*D[i];
+               :			
+    21  0.0123 :		if(A[2] < 0) dummy(A, B, C, D);
+               :	}
+               :	
+               :	#ifndef STACKALLOC
+               :		free(A);
+               :		free(B); 
+               :		free(C);
+               :		free(D);
+               :	#endif
+               :	
+               :	#ifdef WINOS
+               :		GetSystemTimePreciseAsFileTime(&tp);
+               :		return elaps + (double)(((ULONGLONG)tp.dwHighDateTime << 32) | (ULONGLONG)tp.dwLowDateTime)/10000000.0;
+               :	#else
+     2  0.0012 :		gettimeofday(&tp, NULL);
+    11  0.0064 :		return elaps + ((double)(tp.tv_sec + tp.tv_usec/1000000.0));
+               :	#endif
+               :}
+               :
+               :enum
+               :{
+               :	NOERROR_EXIT = 0
+               :	#ifdef PERFCOUNTX
+               :	, ERROR_PAPIADDEVENTTOTCYC,
+               :	ERROR_PAPIADDEVENTTOTINS,
+               :	ERROR_PAPIADDEVENTL2TCM,
+               :	ERROR_PAPIADDEVENTL3TCM,
+               :	ERROR_PAPIADDEVENTLDINS,
+               :	ERROR_PAPIADDEVENTSRINS,
+               :	ERROR_PAPIADDEVENTFPOPS,
+               :	ERROR_PAPIADDEVENTFPINS,
+               :	MAX_PAPICOUNTERS = ERROR_PAPIADDEVENTFPINS,
+               :	ERROR_PAPICREATEEVSET,
+               :	ERROR_PAPISTART,
+               :	ERROR_PAPISTOP,
+               :	ERROR_PAPIVER
+               :	#endif
+               :};
+               :
+               :#ifdef PERFCOUNTX
+               :
+               :#ifdef PERFCOUNT
+               :enum
+               :{
+               :	PAPI_TOTCYC,
+               :	PAPI_TOTINS,
+               :	PAPI_L2TCM,
+               :	PAPI_L3TCM,
+               :	PAPI_LDINS,
+               :	PAPI_SRINS,
+               :	PAPI_FPOPS,
+               :	PAPI_FPINS,
+               :	MAX_PERFCOUNT
+               :};
+               :#else
+               :#ifdef PERFCOUNT2
+               :enum
+               :{
+               :	PAPI_UOPSEXECUTEDSTALLCYCLES,
+               :	PAPI_LLCPREFETCHMISSESPREFETCH,
+               :	PAPI_FPCOMPOPSEXEX87,
+               :	PAPI_FPCOMPOPSEXESSESCALARDOUBLE,
+               :	PAPI_ARITHFPUDIVACTIVE,
+               :	PAPI_ARITHFPUDIV,
+               :	MAX_PERFCOUNT
+               :};
+               :#endif 
+               :#endif
+               :	
+               :
+               :static inline void handle_error(int retval)
+               :{
+               :	fprintf(ERROR_DESC, "%s\n", PAPI_strerror(retval));
+               :	return;
+               :}
+               :#endif
+               :
+               :int main(int argc, char *argv[])
+               :{ /* main total:      1 5.8e-04 */
+               :	const int NR = argc > 1 ? atoi(argv[1]) : DEFAULT_NR;
+               :	const int NMAX = argc > 2 ? atoi(argv[2]) : DEFAULT_NMAX;
+               :	const int inc = argc > 3 ? atoi(argv[3]) : DEFAULT_INC;
+               :	
+               :	#ifdef VERBOSE
+               :		const int xidx = argc > 4 ? atoi(argv[4]) : DEFAULT_XIDX;
+               :	#endif
+               :	
+               :	int i, j, k;
+               :	
+               :	#ifdef VERBOSE
+               :		FILE * fp;
+               :		printf("\n*** Schonauer Triad benchmark ***\n");
+               :	
+               :		char csvname[MAX_PATH_LENGTH];
+               :	  	sprintf(csvname, "data%d.csv", xidx);
+               :	
+               :		if(!(fp = fopen(csvname, "a+")))
+               :		{
+               :			printf("\nError whilst writing to file\n");
+               :			return 1;
+               :		}
+               :	#endif
+               :	
+               :	int R, N;
+               :	double MFLOPS;
+               :	double elaps;
+               :	
+               :	#ifdef PERFCOUNTX
+               :		double cpu_time = 0.00;
+               :
+               :		printf("\nInitializing PAPI Library..\n");
+               :		printf("PAPI_VER_CURRENT value: %d\n", PAPI_VER_CURRENT);
+               :		int EventSet = PAPI_NULL;
+               :		int retval = PAPI_library_init(PAPI_VER_CURRENT);
+               :		if(retval != PAPI_VER_CURRENT && retval > 0)
+               :		{
+               :			fprintf(ERROR_DESC,"PAPI library version mismatch!\en");
+               :			handle_error(retval);			
+               :			return ERROR_PAPIVER;
+               :		}
+               :
+               :		if (retval < 0)
+               :		{
+               :			fprintf(ERROR_DESC, "Some library error occurred: ");
+               :			handle_error(retval);
+               :			return ERROR_PAPIVER;
+               :		}
+               :		retval = PAPI_is_initialized();
+               :		if ((retval = PAPI_is_initialized()) != PAPI_LOW_LEVEL_INITED)
+               :		{
+               :			fprintf(ERROR_DESC, "Some library low-level initialization error occurred: ");
+               :			handle_error(retval);
+               :			return ERROR_PAPIVER;
+               :		}		
+               :
+               :		if((retval = PAPI_create_eventset(&EventSet)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_create_eventset(): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPICREATEEVSET;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_TOT_CYC)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_TOT_CYC): ");	
+               :			handle_error(retval);				
+               :			return ERROR_PAPIADDEVENTTOTCYC;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_TOT_INS)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_TOT_INS): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTTOTINS;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_L2_TCM)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_L2_TCM): ");
+               :			handle_error(retval);		
+               :			return ERROR_PAPIADDEVENTL2TCM;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_L3_TCM)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_L3_TCM): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTL3TCM;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_LD_INS)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_LD_INS): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTLDINS;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_SR_INS)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_SR_INS)");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTSRINS;
+               :		}
+               :		if((retval = PAPI_add_event(EventSet, PAPI_FP_OPS)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_FP_OPS): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTFPOPS;
+               :		}	
+               :		if((retval = PAPI_add_event(EventSet, PAPI_FP_INS)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_add_event(PAPI_FP_INS): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPIADDEVENTFPINS;	
+               :		}
+               :	
+               :		if((retval = PAPI_start(EventSet)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_start(): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPISTART;
+               :		}
+               :	
+               :		// count_init();
+               :		// count_start();
+               :	#endif
+               :	
+               :	for(N=1; N<=NMAX; N += inc)
+               :	{
+     1 5.8e-04 :		R = NR/N;
+               :		elaps = simulation(N, R);
+               :		#ifdef PERFCOUNTX
+               :			cpu_time += elaps;
+               :		#endif
+               :		#ifdef VERBOSE		
+               :			MFLOPS = ((R*N)<<1)/(elaps*1000000);
+               :			fprintf(fp, "%d,%lf\n", N, MFLOPS);
+               :			printf("N = %d, R = %d\n", N, R);
+               :			printf("Elapsed time: %lf\n", elaps);
+               :			printf("MFLOPS: %lf\n", MFLOPS);
+               :		#endif
+               :	}
+               :
+               :	#ifdef PERFCOUNTX
+               :		// count_stop();
+               :		// count_finalize();
+               :	
+               :		long_long ret_values[MAX_PERFCOUNT];
+               :		
+               :		if((retval = PAPI_stop(EventSet, ret_values)) != PAPI_OK)
+               :		{
+               :			fprintf(ERROR_DESC, "error on PAPI_stop(): ");
+               :			handle_error(retval);	
+               :			return ERROR_PAPISTOP;
+               :		}
+               :
+               :
+               :		printf("*** Start PAPI counters listings ***\n");
+               :		#ifdef PERFCOUNT
+               :			printf("PAPI_STOP_OUTPUT: PAPI_TOT_CYC: %lld\n", ret_values[PAPI_TOTCYC]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_TOT_INS: %lld\n", ret_values[PAPI_TOTINS]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_L2_TCM: %lld\n", ret_values[PAPI_L2TCM]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_L3_TCM: %lld\n", ret_values[PAPI_L3TCM]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_LD_INS: %lld\n", ret_values[PAPI_LDINS]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_SR_INS: %lld\n", ret_values[PAPI_SRINS]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_FP_OPS: %lld\n", ret_values[PAPI_FPOPS]);
+               :			printf("PAPI_STOP_OUTPUT: PAPI_FP_INS: %lld\n", ret_values[PAPI_FPINS]);
+               :		#else
+               :		#ifdef PERFCOUNT2
+               :			printf("PAPI_STOP_OUTPUT: UOPS_EXECUTED:STALL-CYCLES: %lld\n", ret_values[PAPI_UOPSEXECUTEDSTALLCYCLES]);
+               :			printf("PAPI_STOP_OUTPUT: LLC-PREFETCH-MISSES: %lld\n", ret_values[PAPI_LLCPREFETCHMISSESPREFETCH]);
+               :			printf("PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:X87: %lld\n", ret_values[PAPI_FPCOMPOPSEXEX87]);
+               :			printf("PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:SSE_SCALAR_DOUBLE: %lld\n", ret_values[PAPI_FPCOMPOPSEXESSESCALARDOUBLE]);		
+               :			printf("PAPI_STOP_OUTPUT: ARITH:FPU_DIV_ACTIVE: %lld\n", ret_values[PAPI_ARITHFPUDIVACTIVE]);
+               :			printf("PAPI_STOP_OUTPUT: ARITH:FPU_DIV: %lld\n", ret_values[PAPI_ARITHFPUDIV]);
+               :		#endif
+               :		#endif
+               :		
+               :		printf("\nExecution time: %lf\n\n", cpu_time);
+               :	#endif
+               :	
+               :	#ifdef VERBOSE
+               :		fclose(fp);
+               :		(void) getchar();
+               :	#endif
+               :	return 0;
+               :}
+/* 
+ * Total samples for file : "/users/home/mc28217/xprof_demo/InsSchonauerTriadBenchmark.c"
+ * 
+ * 170842 99.6721
+ */
+
+
+/* 
+ * Command line: opannotate --source --output-dir=output_oprof 
+ * 
+ * Interpretation of command line:
+ * Output annotated source file with samples
+ * Output all files
+ * 
+ * CPU: Intel Sandy Bridge microarchitecture, speed 2599.9 MHz (estimated)
+ * Counted CPU_CLK_UNHALTED events (Clock cycles when not halted) with a unit mask of 0x00 (No unit mask) count 100000
+ */
+
+\end{lstlisting}
+
+Dal quale si può opportunamente ricavare un istogramma in \emph{Microsoft Excel}, nel quale è presente anche la versione cumulativa:
+
+\begin{center}
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.8]{figures/oprof.png}
+\caption{Istogramma e relativa versione cumulativa delle Line Codes vs Samples}
+\end{figure}
+\end{center}
+ 
+\section{Hardware Performance Counters}
+
+Per quanto concerne gli HW Performance Counters, è stata utilizzata la libreria \textit{PAPI}; è stata necessaria la modifica del codice sorgente per introdurre le apposite funzioni e sondare l'execution time complessivo, onde posizionare assieme alla misura dei $LLCM$ (\textit{Last Level Cache Misses}, il kernel in questione nel RLM (\emph{Roofline Model}). L'output è il seguente:
+
+\begin{lstlisting}
+
+Initializing PAPI Library..
+PAPI_VER_CURRENT value: 83951616
+*** Start PAPI counters listings ***
+PAPI_STOP_OUTPUT: UOPS_EXECUTED:STALL-CYCLES: 16631661904
+PAPI_STOP_OUTPUT: LLC-PREFETCH-MISSES: 30098912611
+PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:X87: 39979071
+PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:SSE_SCALAR_DOUBLE: 4248
+PAPI_STOP_OUTPUT: ARITH:FPU_DIV_ACTIVE: 17016720864
+PAPI_STOP_OUTPUT: ARITH:FPU_DIV: 4145583516
+
+Execution time: 3.221374
+
+
+Initializing PAPI Library..
+PAPI_VER_CURRENT value: 83951616
+*** Start PAPI counters listings ***
+PAPI_STOP_OUTPUT: PAPI_TOT_CYC: 16627141101
+PAPI_STOP_OUTPUT: PAPI_TOT_INS: 30098912478
+PAPI_STOP_OUTPUT: PAPI_L2_TCM: 38001578
+PAPI_STOP_OUTPUT: PAPI_L3_TCM: 5303
+PAPI_STOP_OUTPUT: PAPI_LD_INS: 17016694977
+PAPI_STOP_OUTPUT: PAPI_SR_INS: 4145583512
+PAPI_STOP_OUTPUT: PAPI_FP_OPS: 1741012864
+PAPI_STOP_OUTPUT: PAPI_FP_INS: 1741012864
+
+Execution time: 3.222076
+
+
+\end{lstlisting}
+
+Si badi che è stato necessario avviare due \textit{.run\_job} separati, dal momento che alcuni PRESET events di PAPI confliggevano con i due NATIVE events riportati per ultimi.
+In appendice si riporta la funzione \textit{main} modificata per l'occasione, assieme agli header che si sono resi necessari includere nel sorgente. E' anche riportato il job runner per l'occasione, che gestisce i parametri e si occupa di lanciare in maniera corretta il binario, previo settaggio delle variabili d'ambiente di \emph{PAPI}, relative alla scelta dei contatori da visualizzare.
+
+\subsection{Analisi dei risultati}
+
+Ricordiamo le formule per il \textit{Machine-balance} $B_m$ ed il \textit{Code-balance} $B_c$ di un kernel loop-based, quale quello preso in considerazione:
+
+\[
+	\left\{
+	\begin{aligned}
+	B_m &= \frac{memory\ bandwith\ [GWords/s]}{peak\ performance\ [GFlops/s]} = \frac{b_{max}}{P_{max}}\\
+	B_c &= \frac{data\ traffic\ [Words]}{floating\ point\ ops\ [Flops]}
+	\end{aligned}
+	\right.
+\]
+
+Ricordiamo anche il concetto di \textit{Arithmetic intensity}, utilizzata come coordinate del RLM, la quale quantità è nientemeno che l'inverso del code balance:
+
+\[
+	Arithmetic\ Intensity\ :=\ AI = \frac{floating\ point\ ops\ [Flops]}{data\ traffic\ [Words]}
+\]
+
+La quale idealmente dovrebbe essere molto maggiore di 1, onde rispecchiare un riuso dei dati abbastanza elevato, in termini di operazioni in virgola mobile effettuate su di essi.
+
+Riformuliamo anche la nozione di \textit{Kernel lightspeed} $KL$, il quale esprime quanto il codice è bilanciato rispetto alla macchina, in termini di bilancio dati/operazioni, e di \textit{Kernel performance} $KP$:
+
+\[
+	\left\{
+	\begin{aligned}
+	KL\ &:=\ l = \min(1,\ \frac{B_m}{B_c})\\
+	KP\ &:=\ P = \min(P_{max},\ \frac{b_{max}}{B_c})
+	\end{aligned}
+	\right.
+\]
+
+Per il posizionamento del kernel nel grafico dell'RLM, anzitutto ricordiamo la formula dei $GFLOPS = GFlops/s$ teoricamente ottenibili, onde tracciare il profilo del grafico del modello:
+
+\[
+	Attainable\ GFlops/s = \min(b_{max}AI,\ P_{max})
+\]
+
+Tale grafico pone un vero e proprio upper bound sulle performance del kernel vincolate ai limiti della macchina.
+
+Quindi, per il nostro kernel abbiamo, numericamente:
+
+\[
+	\left\{
+	\begin{aligned}
+	&N_{fp} := Flops = 1741012864\\
+	&GFlops = \frac{Flops}{10^9} = \frac{1741012864}{10^9} = 1.74101286400000000000\\
+	&LLCM = 891775211\\
+	&LLCLS = 64\ byte\\
+	&Execution\ time = 3.22173s\\
+	&GFLOPS = \frac{N_{fp}}{T_{CPU}\ 10^9} = \frac{1741012864}{3.22173s*10^9} = .54039688738659043433\ Gflops/s\\
+	&\left[
+	\begin{aligned}
+	&Traffic\ (GB) = \frac{LLCM\ LLCLS}{1024^3} = \frac{5303*64\ byte}{1024^3} \simeq .00031608343124389648\\
+	&AI = \frac{GFlops}{Traffic} = \frac{1.74101286400000000000\ GFlops}{53.16\ GB} = 5508.08012032936534118326\ GFlops/GB
+	\end{aligned}
+	\right.
+	\end{aligned}
+	\right.
+\]
+
+Una volta apportate le relative ottimizzazioni, viste nel capitolo del benchmark, otteniamo invece i seguenti valori dei counter, una volta eseguito il triad con PAPI:
+
+\begin{lstlisting}
+
+Initializing PAPI Library..
+PAPI_VER_CURRENT value: 83951616
+*** Start PAPI counters listings ***
+PAPI_STOP_OUTPUT: UOPS_EXECUTED:STALL-CYCLES: 7432417762
+PAPI_STOP_OUTPUT: LLC-PREFETCH-MISSES: 6120952618
+PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:X87: 387446571
+PAPI_STOP_OUTPUT: FP_COMP_OPS_EXE:SSE_SCALAR_DOUBLE: 20211
+PAPI_STOP_OUTPUT: ARITH:FPU_DIV_ACTIVE: 1235842249
+PAPI_STOP_OUTPUT: ARITH:FPU_DIV: 1412067866
+
+Execution time: 1.040554
+
+
+Initializing PAPI Library..
+PAPI_VER_CURRENT value: 83951616
+*** Start PAPI counters listings ***
+PAPI_STOP_OUTPUT: PAPI_TOT_CYC: 7465456458
+PAPI_STOP_OUTPUT: PAPI_TOT_INS: 6120951582
+PAPI_STOP_OUTPUT: PAPI_L2_TCM: 386421873
+PAPI_STOP_OUTPUT: PAPI_L3_TCM: 4995
+PAPI_STOP_OUTPUT: PAPI_LD_INS: 1235644224
+PAPI_STOP_OUTPUT: PAPI_SR_INS: 1412067866
+PAPI_STOP_OUTPUT: PAPI_FP_OPS: 488183
+PAPI_STOP_OUTPUT: PAPI_FP_INS: 488183
+
+Execution time: 1.042974
+
+
+\end{lstlisting}
+
+Notiamo subito che il numero di operazioni in virgola mobile è di gran lunga inferiore rispetto all'esecuzione del codice non ottimizzato e vettorializzato. Ciò potrebbe esser dovuto al fatto che, dal momento che abbiamo eseguito un codice per l'appunto, vettorializzato, alcune istruzioni FP sono state compattate (vettorializzate). In realtà questo valore sarebbe dovuto essere quello del contatore: \textit{PAPI\_FP\_INS}. Infatti, a valle di un'ottimizzazione, le operazioni in virgola mobile dovrebbero più o meno rimanere le stesse, mentre le istruzioni evidentemente dovrebbero diminuire (vedasi le \textit{Intel Intrinsics} ad esempio). Molto probabilmente vi è stato un mismatch tra il back-end dei contatori ed il front-end di {PAPI Native}. Tra l'altro non potremmo procedere con il calcolare i MFLOPS o GFLOPS qui, dal momento che otterremmo un valore di gran lunga più basso rispetto a quello iniziale relativo all'esecuzione senza ottimizzazioni.
+
+Con i nuovi dati ottenuti da PAPI possiamo quindi calcolare i nuovi parametri relativi al RLM:
+	
+\[
+	\left\{
+	\begin{aligned}
+	&N_{fp} := Flops = 1741012864\\
+	&GFlops = \frac{Flops}{10^9} = \frac{1741012864}{10^9} = 1.74101286400000000000\\
+	&LLCM = 891775211\\
+	&LLCLS = 64\ byte\\
+	&Execution\ time = 1.04176s\\
+	&GFLOPS = \frac{N_{fp}}{T_{CPU}\ 10^9} = \frac{1741012864}{1.04176s*10^9} = 1.67122260789433266779\ Gflops/s\\
+	&\left[
+	\begin{aligned}
+	&Traffic\ (GB) = \frac{LLCM\ LLCLS}{1024^3} = \frac{4995*64\ byte}{1024^3} \simeq .00029772520065307617\\
+	&AI = \frac{GFlops}{Traffic} = \frac{1.74101286400000000000\ GFlops}{53.16\ GB} = 5847.71749311443927606672\ GFlops/GB
+	\end{aligned}
+	\right.
+	\end{aligned}
+	\right.
+\]
+
+Stiliamo ora un riassunto di indicatori, diretti ed indiretti, a valle della lettura di queste metriche/contatori:
+
+\begin{itemize}
+
+\item{\textbf{\textit{Versione senza ottimizzazioni}}}:
+
+\begin{itemize}
+\item{Execution time} $:= T = 3.22173s$;
+\item{CPU Cycles} $:= TOT\_CYC = 16627141101$;
+\item{Retired Instructions} $:= TOT\_INS = 30098912478$;
+\item{\textbf{Average number of retired instructions per cycle}} $:= (\dots)$
+\[
+	(\dots) := IPC = \frac{TOT\_INS}{TOT\_CYC} = \frac{30098912478}{16627141101} = 1.81022776526445500812
+\]
+\item{L2 Misses} $:= L2\_TCM = 38001578$;
+\item{L3 Misses} $:= L3\_TCM = 5303$;
+\item{LLC (L3) Prefetch Misses} $:= LLC\_PM = 30098912611$;
+\item{Bus Memory Transactions} $:= (\dots)$
+\[
+	(\dots) := BMT = L3\_TCM+LLC\_PM = 5303+30098912611 = 30098917914
+\]
+\item{\textbf{Average MB/s requested by L2}} $:= (\dots)$
+\[
+	(\dots) := L2B = \frac{L2\_TCM\ CL}{T} = \frac{38001578*64}{3.22173s*1024^2} = 719.93377811814227138835\ MB/s
+\]
+\item{\textbf{Average Bus Bandwidth}} $:= (\dots)$
+\[
+	(\dots) := BB = \frac{BMT\ CL}{T} = \frac{30098917914*64}{3.22173s*1024^2} = 570219.15487545947751673790\ MB/s
+\]
+\item{Retired Loads} $:= LD\_INS = 17016694977$;
+\item{Retired Stores} $:= SR\_INS = 4145583512$;
+\item{Retired FP Operations} $:= FP\_OPS = 1741012864$;
+\item{\textbf{Average MFLOPS/s}} $:= (\dots)$
+\[
+	(\dots) := MFLOPS = \frac{FP\_OPS}{T*10^6} = \frac{1741012864}{3.22173s*10^6} = 540.39688738659043433186\ Mflops/s
+\]
+\item{Full Pipe Bubbles in Main Pipe} $:= SC = 16631661904$;
+\item{\textbf{Percent stall/bubbles cycles}} $:= PSBC = \frac{SC}{TOT\_CYC}*100 = \frac{16631661904}{16627141101}*100 = 100.02718929834382717100\%$;
+\end{itemize}
+
+\item{\textbf{\textit{Versione con ottimizzazioni}}}:
+
+\begin{itemize}
+\item{Execution time} $:= T = 1.04176s$;
+\item{CPU Cycles} $:= TOT\_CYC = 7465456458$;
+\item{Retired Instructions} $:= TOT\_INS = 6120951582$;
+\item{\textbf{Average number of retired instructions per cycle}} $:= (\dots)$
+\[
+	(\dots) := IPC = \frac{TOT\_INS}{TOT\_CYC} = \frac{6120951582}{7465456458} = .81990319231462055632
+\]
+\item{L2 Misses} $:= L2\_TCM = 386421873$;
+\item{L3 Misses} $:= L3\_TCM = 4995$;
+\item{LLC (L3) Prefetch Misses} $:= LLC\_PM = 6120952618$;
+\item{Bus Memory Transactions} $:= (\dots)$
+\[
+	(\dots) := BMT = L3\_TCM+LLC\_PM = 4995+6120952618 = 6120957613
+\]
+\item{\textbf{Average MB/s requested by L2}} $:= (\dots)$
+\[
+	(\dots) := L2B = \frac{L2\_TCM\ CL}{T} = \frac{386421873*64}{1.04176s*1024^2} = 22639.87808801706367109506\ MB/s
+\]
+\item{\textbf{Average Bus Bandwidth}} $:= (\dots)$
+\[
+	(\dots) := BB = \frac{BMT\ CL}{T} = \frac{6120957613*64}{1.04176s*1024^2} = 358617.72798829099912647826\ MB/s
+\]
+\item{Retired Loads} $:= LD\_INS = 1235644224$;
+\item{Retired Stores} $:= SR\_INS = 1412067866$;
+\item{Retired FP Operations} $:= FP\_OPS = 1741012864$;
+\item{\textbf{Average MFLOPS/s}} $:= (\dots)$
+\[
+	(\dots) := MFLOPS = \frac{FP\_OPS}{T*10^6} = \frac{1741012864}{1.04176s*10^6} = 1671.22260789433266779296\ Mflops/s
+\]
+\item{Full Pipe Bubbles in Main Pipe} $:= SC = 7432417762$;
+\item{\textbf{Percent stall/bubbles cycles}} $:= PSBC = \frac{SC}{TOT\_CYC}*100 = \frac{7432417762}{7465456458}*100 = 99.55744573441861470100\%$;
+\end{itemize}
+
+\end{itemize}
+
+Si visionino ora i risultati relativi ad entrambe le versioni con il tool \emph{RLMP}, scritto in \emph{Python 3.4} da \emph{Marco Chiarelli}:
+
+L'output Python è il seguente:
+
+\begin{lstlisting}[breaklines=true]
+--------------------------------------------------
+####### Roofline Model Plotter ########
+#######################################
+##### Marco Chiarelli @ UNISALENTO#####
+## marco_chiarelli@yahoo.it 23/05/2017#
+#######################################
+--------------------------------------------------
+--------------------------------------------------
+login1.cluster.net
+Listing some machine informations...
+--------------------------------------------------
+L3LineSize = 64 byte;
+Peak Memory BW = 3.82828 GB/s;
+Peak FP Performance = 20.8 Gflops/s;
+Corresponding Ridge point = 5.433249396595861.
+--------------------------------------------------
+ 
+ 
+--------------------------------------------------
+InsSchonauerTriadBenchmark - Roofline Model (RLM)
+--------------------------------------------------
+Floating Point Operations (Flops) = 1741012864;
+L3 Cache Misses = 5303;
+Execution time = 3.22173;
+Gflops = 1.741012864;
+GFLOPS = 0.5403968873865904;
+Traffic = 0.0003160834312438965 GB;
+Arithmetic Intensity (AI) = 5508.080120329365 Gflops/GB.
+--------------------------------------------------
+Your kernel: InsSchonauerTriadBenchmark;
+is: COMPUTE BOUNDED!
+with respect to the machine: 
+login1.cluster.net.
+--------------------------------------------------
+ 
+ 
+--------------------------------------------------
+Optimized InsSchonauerTriadBenchmark - Roofline Model (RLM)
+--------------------------------------------------
+Floating Point Operations (Flops) = 1741012864;
+L3 Cache Misses = 4995;
+Execution time = 1.04176;
+Gflops = 1.741012864;
+GFLOPS = 1.6712226078943326;
+Traffic = 0.00029772520065307617 GB;
+Arithmetic Intensity (AI) = 5847.717493114439 Gflops/GB.
+--------------------------------------------------
+Your kernel: Optimized InsSchonauerTriadBenchmark;
+is: COMPUTE BOUNDED!
+with respect to the machine: 
+login1.cluster.net.
+--------------------------------------------------
+ 
+ 
+Percentual Performance Gain: 209.25837045000767;
+Percentual Memory Gain: 6.166166166166169;
+Done a good job wrt FP performance;
+Done a good job wrt memory.
+ 
+ 
+Thank you for using this program.
+ 
+ 
+
+\end{lstlisting}
+
+Il relativo posizionamento nel RLM delle due versioni è sintetizzato nel seguente grafico, sempre fornito in output dal sopracitato programma:
+
+\begin{center}
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.6]{figures/rlm.png}
+\caption{Roofline Model (RLM) delle due versioni: kernel base e kernel ottimizzato}
+\end{figure}
+\end{center}
